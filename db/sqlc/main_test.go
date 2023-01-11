@@ -22,10 +22,14 @@ const (
 // since the New methods in sqlc/db.go returns a Query pointer,
 // we will need this variable to capture the result of our call to the New method
 var testQueries *Queries
+var testDB *sql.DB // we add this since the NewStore() requires sql.DB object
 
 func TestMain(m *testing.M) {
 	// We open the connection to the database
-	conn, err := sql.Open(dbDriver, dbSource)
+	var err error
+	testDB, err = sql.Open(dbDriver, dbSource) // we store it to testDB so that ir can reuse elsewhere
+	// it is important that testDB is not considered as new variable (:=) otherwise, it will fail to be used for
+	//testing
 	// we need to male sure that the connection was successful
 	if err != nil {
 		log.Fatalf("cannot connect to db with error %v", err)
@@ -38,7 +42,7 @@ func TestMain(m *testing.M) {
 	//}
 
 	// Now here, we finally make our call to New and assign its value to the variable created above
-	testQueries = New(conn)
+	testQueries = New(testDB)
 
 	// m.Run() will start running the test
 	// And it will return an exit code that will be passed to the os.Exit() method
