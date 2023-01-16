@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
@@ -15,13 +16,14 @@ func TestTransferTx(t *testing.T) {
 	// we will send money from accounts 1 to 2
 	account1 := createRandomAccount(t)
 	account2 := createRandomAccount(t)
+	fmt.Println(">> before:", account1.Balance, account2.Balance)
 
 	// Since for database transaction we have to handle the concurrency carefully
 	// so the best way to make sure that is done correctly is to test it with several
 	// concurrent go routines
 
-	// We will run 5 concurrent transfer transactions and each will transfer an amount of 1o from account 1 to 2
-	n := 5
+	// We will run 2 concurrent transfer transactions and each will transfer an amount of 1o from account 1 to 2
+	n := 2
 	amount := int64(10)
 
 	// we create the channel for the result and the error
@@ -29,10 +31,17 @@ func TestTransferTx(t *testing.T) {
 	results := make(chan TransferTxResult) // all 5 result will be stored here
 
 	for i := 0; i < n; i++ {
+		// we create this variable to help debug the deadlock
+		// This will help see which transaction is calling which query and in which order
+		txName := fmt.Sprintf("tx %d", i+1)
 		// we use the go keyword to start independent concurrent thread of control,
 		//or goroutine, within the same address space.
 		go func() {
-			result, err := store.TransferTx(context.Background(), TransferTxParams{
+			// we are going to add the transaction name to the context
+			// and pass it in the background context as its parent
+			ctx := context.WithValue(context.Background(), txKey, txName)
+
+			result, err := store.TransferTx(ctx, TransferTxParams{
 				FromAccountID: account1.ID,
 				ToAccountID:   account2.ID,
 				Amount:        amount,
@@ -53,6 +62,8 @@ func TestTransferTx(t *testing.T) {
 		}()
 	}
 
+	// we create this map for allow to check for uniqueness of "k"
+	existed := make(map[int]bool)
 	// Now here we can check the results
 	for i := 0; i < n; i++ {
 		err := <-errs // we get the value from the channel; value := <-channel
@@ -102,7 +113,50 @@ func TestTransferTx(t *testing.T) {
 		_, err = store.GetEntry(context.Background(), toEntry.ID)
 		require.NoError(t, err)
 
-		// TODO: check for the accounts
-	}
+		// We are going to use a test drive development approach
+		// to add the part for updating the account
+		// That is, we first write the unit test and broke our code
+		// make changes until the unit test passes
 
+		// let's add check for the output accounts and their balances
+
+		//check that the account field from the result is not empty
+		// also check that the ID mathces
+		fromAccount := result.FromAccount
+		require.NotEmpty(t, fromAccount)
+		require.Equal(t, account1.ID, fromAccount.ID)
+
+		toAccount := result.ToAccount
+		require.NotEmpty(t, toAccount)
+		require.Equal(t, account2.ID, toAccount.ID)
+
+		// Now we need to check the accounts' balance
+
+		// calculate the difference between the input account's balance and the output account's balance
+		// that difference should be equal to the transaction amount
+		// And it should be the same for To/From Account
+		diff1 := account1.Balance - fromAccount.Balance // input >> output
+		diff2 := toAccount.Balance - account2.Balance   // output >> input
+		require.Equal(t, diff1, diff2)
+		require.True(t, diff1 > 0)         // transfer must be greater than zero
+		require.True(t, diff1%amount == 0) // the diff must be divisible by the amount being transfer
+		// because we are removing k*amount for each transaction , k being the number of transaction in this test
+		k := int(diff1 / amount)
+		require.True(t, k >= 1 && k <= n)
+		require.NotContains(t, existed, k) // k must be unique for each transaction
+		existed[k] = true                  // update the map to set that the transaction k is finished
+
+	}
+	// Now once all the transactions are done, we need to check for the final updated balances of the 2 accounts
+	updatedAccount1, err := store.GetAccount(context.Background(), account1.ID)
+	require.NoError(t, err)
+
+	updatedAccount2, err := store.GetAccount(context.Background(), account2.ID)
+	require.NoError(t, err)
+
+	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
+	// after n transactions, the balance of the sender account must decrease by n*amount
+	// after n transactions, the balance of the receiver account must increase n*amount
+	require.Equal(t, account1.Balance-int64(n)*amount, updatedAccount1.Balance)
+	require.Equal(t, account2.Balance+int64(n)*amount, updatedAccount2.Balance)
 }
