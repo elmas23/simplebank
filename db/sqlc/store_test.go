@@ -22,13 +22,13 @@ func TestTransferTx(t *testing.T) {
 	// so the best way to make sure that is done correctly is to test it with several
 	// concurrent go routines
 
-	// We will run 2 concurrent transfer transactions and each will transfer an amount of 1o from account 1 to 2
+	// We will run 2 concurrent transfer transactions and each will transfer an amount of 10 from account 1 to 2
 	n := 2
 	amount := int64(10)
 
 	// we create the channel for the result and the error
-	errs := make(chan error)               // all 5 errors will be stored here
-	results := make(chan TransferTxResult) // all 5 result will be stored here
+	errs := make(chan error)               // all 2 errors will be stored here
+	results := make(chan TransferTxResult) // all 2 result will be stored here
 
 	for i := 0; i < n; i++ {
 		// we create this variable to help debug the deadlock
@@ -47,13 +47,13 @@ func TestTransferTx(t *testing.T) {
 				Amount:        amount,
 			})
 
-			// The function returns a result and an error, but we can use testify/require to check them right here
+			// The function returns a result and an error, but we cannot use testify/require to check them right here
 			// Because this function is running inside a different go routine than our TestTransferTx
 			// so there is no guarantee that it will stop the whole test if a condition is not satisfied
 
-			// The best to verify the error and the result is to send them back to the main go routine that our test
+			// The best way to verify the error and the result is to send them back to the main go routine that our test
 			// is running on
-			// We use "channels". Channel is used to connected concurrent Go routines, and allow them to share date
+			// We use "channels". Channel is used to connect concurrent Go routines, and allow them to share data
 			// with each other without explicit locking
 
 			// channel <- value
@@ -72,7 +72,7 @@ func TestTransferTx(t *testing.T) {
 		result := <-results // we get the value from the channel
 		require.NotEmpty(t, result)
 
-		// since result contains several objects inside, we are going to very each of them
+		// since result contains several objects inside, we are going to verify each of them
 
 		// check transfer
 		transfer := result.Transfer
@@ -159,4 +159,104 @@ func TestTransferTx(t *testing.T) {
 	// after n transactions, the balance of the receiver account must increase n*amount
 	require.Equal(t, account1.Balance-int64(n)*amount, updatedAccount1.Balance)
 	require.Equal(t, account2.Balance+int64(n)*amount, updatedAccount2.Balance)
+}
+
+func TestTransferTxDeadlock(t *testing.T) {
+	// we first need to create a new store that will be used for testing
+
+	store := NewStore(testDB) // we can access this testDB var since it is in the same db package
+
+	// we create two randoms accounts
+	// we will send money from accounts 1 to 2
+	account1 := createRandomAccount(t)
+	account2 := createRandomAccount(t)
+	fmt.Println(">> before:", account1.Balance, account2.Balance)
+
+	// Here we are testing another potential source of deadlock for our transaction
+	// if there are 2 concurrent transactions involving the same pair of accounts, there might be a
+	// potential deadlock since both transaction require an exclusive lock to update the balance
+	// of fromAccount and toAccount
+
+	// an example is there is a transfer from account1 to account 2 and there is also a transfer for the opposite
+	//scenario.
+
+	// To better illustrate: we are transferring 10$ form account 1 to account 2 (tx1) and also the opposite (tx2)
+	// so tx1 will update the balance of those accounts by subtracting 10$ from account 1 and adding 10$ to account 2
+
+	// now let's say tx1 subtract 10$ from account 1's balance and simultaneously tx2 subtract 10$ from account 2's balance
+	// this action will perform will
+	// now tx1 want to add 10$ to account 2's balance, this action will not be applied since there is lock for account 2
+	// in tx2
+	// Also tx2 want to add 10$ to account 1's balance, this action will not be applied since there is a lock for
+	// account 1 in tx1
+	// so both transactions will wait for each other and thus creating the deadlock.
+
+	// We will run 10 concurrent transfer transactions and
+	// half will transfer an amount of 10 from account 1 to 2
+	// and the other half will transfer an amount of 10 from account 2 to  1
+	n := 10
+	amount := int64(10)
+
+	// we create the channel for the error
+	errs := make(chan error) // all 2 errors will be stored here
+	// We only need to check for the deadlock, so we can remove this results channel
+	//results := make(chan TransferTxResult) // all 2 result will be stored here
+
+	for i := 0; i < n; i++ {
+
+		txName := fmt.Sprintf("tx %d", i+1)
+
+		// we create two variables that we are going to use to switch to ID
+		// so that we can have the scenarion where half of the transactions
+		// are 1 ---> 2 and 2 ---> 1
+		fromAccountID := account1.ID
+		toAccountID := account2.ID
+
+		if i%2 == 1 {
+			fromAccountID = account2.ID
+			toAccountID = account1.ID
+		}
+
+		go func() {
+			ctx := context.WithValue(context.Background(), txKey, txName)
+			_, err := store.TransferTx(ctx, TransferTxParams{
+				FromAccountID: fromAccountID, // now we use it here for our TransferTxParams
+				ToAccountID:   toAccountID,   // now we use it here for our TransferTxParams
+				Amount:        amount,
+			})
+
+			// The function returns a result (not needed here) and an error, but we cannot use testify/require to check them right here
+			// Because this function is running inside a different go routine than our TestTransferTx
+			// so there is no guarantee that it will stop the whole test if a condition is not satisfied
+
+			// The best way to verify the error and the result is to send them back to the main go routine that our test
+			// is running on
+			// We use "channels". Channel is used to connect concurrent Go routines, and allow them to share data
+			// with each other without explicit locking
+
+			// channel <- value
+			errs <- err
+
+		}()
+	}
+
+	// Now here we can just check that there is no error fot those transactions
+	for i := 0; i < n; i++ {
+		err := <-errs // we get the value from the channel; value := <-channel
+		require.NoError(t, err)
+	}
+	// Now once all the transactions are done, we need to check for the final updated balances of the 2 accounts
+	updatedAccount1, err := store.GetAccount(context.Background(), account1.ID)
+	require.NoError(t, err)
+
+	updatedAccount2, err := store.GetAccount(context.Background(), account2.ID)
+	require.NoError(t, err)
+
+	fmt.Println(">> after:", updatedAccount1.Balance, updatedAccount2.Balance)
+	// after n transactions, the balance of the sender account must decrease by (n/2)*amount
+	// after n transactions, the balance of the receiver account must increase (n/2)*amount
+	// essentially that means that the transactions cancel each other out
+	// so the final amount for each account should be the same as before all those transactions
+	require.Equal(t, account1.Balance, updatedAccount1.Balance)
+	require.Equal(t, account2.Balance, updatedAccount2.Balance)
 }

@@ -96,7 +96,7 @@ type TransferTxResult struct {
 	ToEntry     Entry    `json:"to_entry"`     // the Entry that records that money is moving in
 }
 
-// this variable is will be used for the context key
+// this variable will be used for the context key
 // since this cannot be of type string or any built-in type to avoid collisions between packages
 // Thus we will be defining it as 'struct{}' type for the context key
 // we will have to use this key to get the transaction name from the input context of the TransferTx() function
@@ -172,38 +172,53 @@ func (store *Store) TransferTx(ctx context.Context, arg TransferTxParams) (Trans
 				return err
 			}
 		*/
-		// update the balance of the sender
-		fmt.Println(txName, "add account 1")
-		result.FromAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
-			ID:     arg.FromAccountID,
-			Amount: -arg.Amount,
-		})
-		if err != nil {
-			return err
+
+		// The solution to the second deadlock issue is that we need to make sure
+		// that both transactions update the accounts balance in the sane order
+		// that is if tx1 update account1 before 2, then tx2 should do the same
+
+		// General advice is that the best way to defend against deadlocks is to avoid
+		// them by making sure that our application always acquire locks in a consistent order
+
+		// In our case we can make it such that we always update the account with smaller ID first.
+
+		if arg.FromAccountID < arg.ToAccountID {
+			// In this case we update the fromAccount first
+			result.FromAccount, result.ToAccount, err = addMoney(ctx, q, arg.FromAccountID, -arg.Amount, arg.ToAccountID, arg.Amount)
+		} else {
+			// In this case we update the toAccount first
+			result.ToAccount, result.FromAccount, err = addMoney(ctx, q, arg.ToAccountID, arg.Amount, arg.FromAccountID, -arg.Amount)
 		}
-
-		// move money into account2
-
-		/*
-			fmt.Println(txName, "get account 2")
-			account2, err := q.GetAccountForUpdate(ctx, arg.ToAccountID)
-			if err != nil {
-				return err
-			}
-		*/
-
-		fmt.Println(txName, "update account 2")
-		result.ToAccount, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
-			ID:     arg.ToAccountID,
-			Amount: arg.Amount,
-		})
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	})
-
 	return result, err
 
+}
+
+// this function add money to 2 accounts
+// the function will return 3 values:
+// the 1st account object
+// the 2nd account object
+// the potential error
+
+func addMoney(
+	ctx context.Context,
+	q *Queries, // query struct to call AddAccountBalance
+	accountID1 int64, // first account to update
+	amount1 int64, // the amount that needs to be applied to the first account
+	accountID2 int64, // second account to update
+	amount2 int64, // the amount that needs to be applied to the second account
+) (account1 Account, account2 Account, err error) {
+	account1, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     accountID1,
+		Amount: amount1,
+	})
+	if err != nil {
+		return
+	}
+	account2, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
+		ID:     accountID2,
+		Amount: amount2,
+	})
+	return // this similar to return account1 , account2 , err ; it's just a shortcut
 }
