@@ -41,6 +41,53 @@ How to Run SQL TX ?
 		We begin the transaction and run a series of db queries and if all are successful,
 		we commit the transaction. Otherwise, we roll back the transaction.
 
+
+ Lets deep dive into Isolation
+
+Isolation is one of the four property of a database transaction, where at its highest level,
+a perfect isolation ensures that all concurrent transactions will not affect each other.
+
+There are several ways that a transaction can be interfered by other transactions that runs
+simultaneously with it. This interference will cause something we call "read phenomenon"
+
+There are 4 read phenomenon:
+
+      - First, dirty read phenomenon. It happens when a transaction reads data written by other concurrent transaction
+       that has not been committed yet. This is terribly bad, because we don’t know if that other transaction
+       will eventually be committed
+       or rolled back. So we might end up using incorrect data in case rollback occurs.
+
+      - The second phenomenon we might encounter is non-repeatable read. When a transaction reads
+         the same record twice and see different values, because the row has been modified by other transaction
+         that was committed after the first read.
+
+      - Phantom read is a similar phenomenon, but affects queries that search for multiple rows instead of one.
+		In this case, the same query is re-executed, but a different set of rows is returned, due to some changes made
+		by other recently-committed transactions, such as inserting new rows or deleting existing rows which happen to
+		satisfy the search condition of current transaction’s query.
+
+      - Another phenomenon that involves the separation of a group of transactions is serialization anomaly.
+		It’s when the result of a group of concurrent committed transactions could not be achieved if we try to run them
+		sequentially in any order without overlapping each other.
+
+Now in order to deal with these phenomena, 4 standard isolation levels were defined
+by the American National Standard Institute or ANSI:
+
+	- The lowest isolation level is read uncommitted. Transactions in this level can see data written by other
+uncommitted transactions, thus allowing dirty read phenomenon to happen.
+
+	- The next isolation level is read committed, where transactions can only see data that has been committed
+	by other transactions. Because of this, dirty read is no longer possible.
+
+	- A bit more strict is the repeatable read isolation level. It ensures that the same select query will
+	always return the same result, no matter how many times it is executed, even if some other concurrent transactions
+	have committed new changes that satisfy the query.
+
+	- Finally the highest isolation level is serializable. Concurrent transactions running in this level are
+	guaranteed to be able to yield the same result as if they’re executed sequentially in some order, one after
+	another without overlapping. So basically it means that there exists at least 1 way to order these concurrent
+	transactions so that if we run them one by one, the final result will be the same.
+
 */
 
 // Store provides all functions to execute db queries and transactions
@@ -203,11 +250,11 @@ func (store *Store) TransferTx(ctx context.Context, arg TransferTxParams) (Trans
 
 func addMoney(
 	ctx context.Context,
-	q *Queries, // query struct to call AddAccountBalance
+	q *Queries,       // query struct to call AddAccountBalance
 	accountID1 int64, // first account to update
-	amount1 int64, // the amount that needs to be applied to the first account
+	amount1 int64,    // the amount that needs to be applied to the first account
 	accountID2 int64, // second account to update
-	amount2 int64, // the amount that needs to be applied to the second account
+	amount2 int64,    // the amount that needs to be applied to the second account
 ) (account1 Account, account2 Account, err error) {
 	account1, err = q.AddAccountBalance(ctx, AddAccountBalanceParams{
 		ID:     accountID1,
