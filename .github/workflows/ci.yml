@@ -4,9 +4,9 @@ name: ci-test
 # For this case it will be triggered when we push on master or make a pull request
 on:
   push:
-    branches: [ master ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "main" ]
 
 jobs:
 
