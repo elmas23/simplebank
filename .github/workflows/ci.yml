@@ -29,7 +29,7 @@ jobs:
           POSTGRES_PASSWORD: secret
           POSTGRES_DB: simple_bank
         ports:
-          - # Here we define our port mapping
+          # Here we define our port mapping
           - 5432:5432
         # the health check is very important because it is used by the runner to check if Postgres is started
         # Otherwise the test will fail because it cannot connect to the database
