@@ -1,0 +1,70 @@
+name: ci-test
+
+# This where we define the trigger for this workflow
+# For this case it will be triggered when we push on master or make a pull request
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  # we have one job running which is the "test"
+  test:
+    name: Test
+    # the test job will run on the ubuntu runner
+    runs-on: ubuntu-latest
+
+    # here we add postgres as an external service of this job
+    services:
+      # we specify the service that we want
+      postgres:
+        # we specify the postgres docker image that we want
+        # in this case postgres12
+        image: postgres:12
+        env:
+          # we set the environment variables that will be used as credentials for our database connection
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: simple_bank
+        ports:
+          - # Here we define our port mapping
+          - 5432:5432
+        # the health check is very important because it is used by the runner to check if Postgres is started
+        # Otherwise the test will fail because it cannot connect to the database
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # the first step for our job is to set up or install Go into the runner
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v2
+        # we use the "with" keyword to provide input parameters to this action
+        # In this case, we use that to specify a specific version of Go
+        with:
+          go-version: ^1.15
+        # the id is just a unique identifier of this step
+        # we might use it for the case when we need to refer to this step in other context
+        id: go
+
+      # The second is to check out the code of this repository into the runner
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      # we install to golang-migrate so that we can run make migrateup command from our makefile
+      - name: Install golang-migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.12.2/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate.linux-amd64 /usr/bin/migrate
+          which migrate
+
+      # Here we run migrateup to create all the database schema for our application
+      - name: Run migrations
+        run: make migrateup
+      # The last step is to run our unit tests
+      - name: Test
+        run: make test
