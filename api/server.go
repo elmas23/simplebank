@@ -33,7 +33,16 @@ func NewServer(store *db.Store) *Server {
 
 	// These methods need to be of the Server struct since they will need to access the store object
 	// So that it can save new accounts to the database
-	router.POST("/accounts", server.createAccount)
+	router.POST("/accounts", server.createAccount) // for creating an account
+	router.GET("/accounts/:id", server.getAccount) // for getting a specific account by the user ID
+	// the path contains a colon, that is to tell Gin that id is a URI parameter
+
+	// This router will be to retrieve a list of accounts using pagination
+	// Here we don't provide a URI parameter because we will use query parameter directly in the URL
+	// of the request example: http://localhost:8080/accounts?page_id=1&page_size=5
+	// page_in is the index number of the page we want to get, starting from page 1
+	// page_size, is the maximum number of records that can be returned in one page
+	router.GET("/accounts", server.listAccount)
 
 	server.router = router // we set our server router to the router we just created using gin above
 
