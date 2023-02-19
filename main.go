@@ -8,20 +8,22 @@ import (
 
 	"github.com/elmas23/simplebank/api"
 	db "github.com/elmas23/simplebank/db/sqlc"
+	"github.com/elmas23/simplebank/db/utils"
 	_ "github.com/lib/pq"
 )
 
-const (
-	dbDriver      = "postgres"
-	dbSource      = "postgresql://root:secret@localhost:5432/simple_bank?sslmode=disable"
-	serverAddress = "0.0.0.0:8080" // localhost
-)
-
 func main() {
+
+	// We load our variables values from Viper LoadConfig
+	config, err := utils.LoadConfig(".")
+	if err != nil {
+		log.Fatal("cannot load config:", err)
+	}
+
 	// In order to create a server, we need to connect to the database and create a store
 
 	// we are connection to the database
-	conn, err := sql.Open(dbDriver, dbSource)
+	conn, err := sql.Open(config.DBDriver, config.DBSource)
 	if err != nil {
 		log.Fatal("cannot connect to db:", err)
 	}
@@ -32,7 +34,7 @@ func main() {
 	server := api.NewServer(store)
 
 	// Starting our server
-	err = server.Start(serverAddress)
+	err = server.Start(config.ServerAddress)
 	if err != nil {
 		log.Fatal("cannot start server:", err)
 	}
