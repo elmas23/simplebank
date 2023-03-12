@@ -86,7 +86,7 @@ func TestTransferTx(t *testing.T) {
 		// to really be sure that a transfer record is created in the database
 		// we should call store.GetTransfer() to find a record with ID equals to transfer.ID
 		_, err = store.GetTransfer(context.Background(), transfer.ID) //we can directly call GetTransfer from the store
-		// because the Queries object is embedded inside the Store
+		// because the Queries object is embedded inside the SQLStore
 		require.NoError(t, err)
 
 		// Next we will check the accounts entries of the result

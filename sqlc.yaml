@@ -7,6 +7,6 @@ packages:
     engine: "postgresql"
     emit_json_tags: true
     emit_prepared_queries: false
-    emit_interface: false
+    emit_interface: true # so that it create an interface with all the function of the Queries struct under querier.go
     emit_exact_table_names: false
     emit_empty_slices: true # so that we can return empty list instead of null
