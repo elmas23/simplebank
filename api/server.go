@@ -9,7 +9,7 @@ import (
 
 // Server will serve all the HTTP requests for our banking service
 type Server struct {
-	store  *db.Store   // this will allow us to interact with the database when processing API requests from clients
+	store  db.Store    // this will allow us to interact with the database when processing API requests from clients
 	router *gin.Engine // This router from gin wil help use send each API request to the correct handler for processing
 }
 
@@ -18,7 +18,8 @@ type Server struct {
 
 // NewServer : We pass store as an input parameters since that will be needed as defined per the struct
 // we don't pass the router as that can be built directly inside using gin
-func NewServer(store *db.Store) *Server {
+// We remove the pointer since Store is no longer a struct pointer but an interface
+func NewServer(store db.Store) *Server {
 	server := &Server{store: store}
 	router := gin.Default() // That's how we create a new router using gin
 
